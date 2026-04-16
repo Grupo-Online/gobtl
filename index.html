@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Activaciones PRO</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0A0E1A;color:#F1F5F9;font-family:'DM Sans',sans-serif;min-height:100vh}
+input,textarea,select{background:#1a2235;border:1px solid #1e2d45;color:#F1F5F9;padding:10px 14px;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;width:100%;outline:none;transition:border .15s}
+input:focus,textarea:focus,select:focus{border-color:#F59E0B}
+textarea{resize:vertical;min-height:70px}
+label{font-size:11px;color:#64748B;font-weight:600;letter-spacing:.05em;text-transform:uppercase;display:block;margin-bottom:5px}
+button{cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;border:none;border-radius:8px;transition:all .15s}
+button:hover{opacity:.82;transform:translateY(-1px)}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:#F59E0B;border-radius:2px}
+</style>
+</head>
+<body>
+<div id="APP"></div>
+
+<script>
+const G={bg:"#0A0E1A",surface:"#111827",card:"#1a2235",border:"#1e2d45",accent:"#F59E0B",accentLight:"#FCD34D",green:"#10B981",red:"#EF4444",blue:"#3B82F6",purple:"#8B5CF6",text:"#F1F5F9",muted:"#64748B"};
+
+// ── USUARIOS FIJOS (hardcoded) ─────────────────────────────────────────────
+const USERS_BASE = [
+  {id:"admin1",  name:"Administrador",   user:"admin",       pass:"admin123",  role:"admin",    activo:true},
+  {id:"u_pablo", name:"Pablo Lorenzo",   user:"admin2",      pass:"admin123",  role:"admin",    activo:true},
+  {id:"u_luis",  name:"Luis Roulet",     user:"Repsol",      pass:"Luis123",   role:"promotor", activo:true},
+  {id:"u_jose",  name:"Jose Aguilar",    user:"Shell",       pass:"Jose123",   role:"promotor", activo:true},
+  {id:"u_gaby",  name:"Gaby Valdez",     user:"Repsol2",     pass:"Gaby123",   role:"promotor", activo:true},
+  {id:"u_cris",  name:"Cristofer Valdez",user:"Shell2",      pass:"Cristo123", role:"promotor", activo:true},
+  {id:"u_rene",  name:"Rene Estrada",    user:"egm",         pass:"Rene123",   role:"promotor", activo:true},
+  {id:"u_diego", name:"Diego Valez",     user:"egm2",        pass:"Diego123",  role:"promotor", activo:true},
+  {id:"u_cyntia",name:"Cyntia",          user:"lubriimport", pass:"lubri123",  role:"cliente",  activo:true},
+  {id:"u_evelyn",name:"Evelyn",          user:"egmcliente",  pass:"egm123",    role:"cliente",  activo:true},
+];
+
+// Usuarios desde localStorage (pueden agregarse más)
+function getUsers(){
+  try{
+    const extra=JSON.parse(localStorage.getItem("ap_extra_users")||"[]");
+    return [...USERS_BASE,...extra];
+  }catch{return USERS_BASE;}
+}
+function saveExtraUsers(all){
+  const extra=all.filter(u=>!USERS_BASE.find(b=>b.id===u.id));
+  localStorage.setItem("ap_extra_users",JSON.stringify(extra));
+}
+
+// DB
+function getDB(){try{return JSON.parse(localStorage.getItem("ap_db")||'{"activaciones":[],"encuestas":[]}')}catch{return{activaciones:[],encuestas:[]}}}
+function saveDB(db){localStorage.setItem("ap_db",JSON.stringify(db))}
+
+const uid=()=>Math.random().toString(36).slice(2,8);
+const nowStr=()=>new Date().toLocaleString("es-MX",{hour12:false});
+const todayStr=()=>new Date().toLocaleDateString("es-MX");
+
+// ── STATE ──────────────────────────────────────────────────────────────────
+let STATE={user:null,view:"login"};
+
+// ── TOAST ──────────────────────────────────────────────────────────────────
+function toast(msg,type="info"){
+  const colors={info:G.blue,success:G.green,warning:G.accent,error:G.red};
+  let tc=document.getElementById("tc");
+  if(!tc){tc=document.createElement("div");tc.id="tc";tc.style.cssText="position:fixed;top:14px;right:14px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:300px;pointer-events:none";document.body.appendChild(tc);}
+  const t=document.createElement("div");
+  t.style.cssText=`background:${G.card};border:1px solid ${colors[type]};border-left:4px solid ${colors[type]};border-radius:10px;padding:11px 15px;font-size:13px;color:${G.text};box-shadow:0 4px 20px rgba(0,0,0,.6)`;
+  t.textContent=msg;tc.appendChild(t);
+  setTimeout(()=>t.remove(),4000);
+}
+
+// ── DOM HELPERS ────────────────────────────────────────────────────────────
+const el=(tag,style={},children=[],attrs={})=>{
+  const e=document.createElement(tag);
+  if(typeof style==="object")Object.assign(e.style,style);
+  Object.entries(attrs).forEach(([k,v])=>{if(k.startsWith("on"))e.addEventListener(k.slice(2).toLowerCase(),v);else e.setAttribute(k,v);});
+  children.forEach(c=>{if(c!=null&&c!==false)e.appendChild(typeof c==="string"?document.createTextNode(c):c);});
+  return e;
+};
+const div=(style,children=[])=>el("div",style,children);
+const card=(children,style={})=>div({background:G.card,border:`1px solid ${G.border}`,borderRadius:12,padding:20,...style},children);
+const badge=(label,color=G.accent)=>el("span",{background:color+"22",color,fontSize:"11px",fontWeight:700,padding:"2px 10px",borderRadius:"20px",border:`1px solid ${color}44`},[label]);
+const secTitle=(text,color=G.accent)=>div({fontFamily:"'Bebas Neue'",fontSize:"28px",color,letterSpacing:"2px",marginBottom:"6px"},[text]);
+const mkBtn=(label,onClick,bg=G.accent,fg="#000",extra={})=>{const b=el("button",{background:bg,color:fg,padding:"9px 18px",fontSize:"13px",...extra},[label]);b.addEventListener("click",onClick);return b;};
+const lbl=t=>el("label",{},[t]);
+const inp=(ph,val,onCh,type="text")=>{const i=el("input",{},{},{"placeholder":ph,"type":type});i.value=val||"";i.addEventListener("input",e=>onCh(e.target.value));return i;};
+const fld=(l,inputEl,mb="13px")=>div({marginBottom:mb},[lbl(l),inputEl]);
+const selEl=(opts,val,onCh)=>{const s=el("select",{},[]);opts.forEach(([v,l])=>{const o=el("option",{},[l],{value:v});if(v===val)o.selected=true;s.appendChild(o);});s.addEventListener("change",e=>onCh(e.target.value));return s;};
+
+function render(){
+  const root=document.getElementById("APP");
+  root.innerHTML="";
+  if(!STATE.user){root.appendChild(renderLogin());return;}
+  root.appendChild(renderShell());
+}
+
+// ── LOGIN ──────────────────────────────────────────────────────────────────
+function renderLogin(){
+  let u="",p="";
+  const errEl=div({color:G.red,fontSize:"12px",display:"none",marginBottom:"10px"},[]);
+  const uInp=inp("Tu usuario","",v=>u=v);
+  const pInp=inp("Tu contraseña","",v=>p=v,"password");
+
+  const doLogin=()=>{
+    const all=getUsers();
+    // Comparación EXACTA — respeta mayúsculas tal como están en la lista
+    const found=all.find(x=>x.user===u.trim()&&x.pass===p&&x.activo!==false);
+    if(found){
+      STATE.user=found;
+      STATE.view=found.role==="cliente"?"cliente":"dashboard";
+      toast("¡Bienvenido, "+found.name+"!","success");
+      render();
+    }else{
+      errEl.textContent="Usuario o contraseña incorrectos";
+      errEl.style.display="block";
+      toast("Credenciales incorrectas","error");
+    }
+  };
+  [uInp,pInp].forEach(i=>i.addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();}));
+
+  return div({minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"},[
+    div({width:"100%",maxWidth:"400px"},[
+      div({textAlign:"center",marginBottom:"32px"},[
+        div({fontFamily:"'Bebas Neue'",fontSize:"52px",color:G.accent,letterSpacing:"4px"},["⚡ ACTIVACIONES"]),
+        div({fontFamily:"'Bebas Neue'",fontSize:"20px",color:G.muted,letterSpacing:"8px"},["PRO"]),
+      ]),
+      card([
+        errEl,
+        fld("Usuario",uInp),
+        fld("Contraseña",pInp),
+        mkBtn("Ingresar →",doLogin,G.accent,"#000",{width:"100%",padding:"13px",fontSize:"16px",marginTop:"6px"}),
+      ]),
+      div({marginTop:"20px",background:G.surface,borderRadius:"10px",padding:"16px"},[
+        div({fontWeight:700,fontSize:"11px",color:G.accentLight,marginBottom:"10px",letterSpacing:"1px",textTransform:"uppercase"},["Referencia de usuarios"]),
+        ...getUsers().map(u=>div({display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${G.border}`,fontSize:"12px"},[
+          el("span",{color:G.text,fontWeight:600},[u.user]),
+          el("span",{color:G.muted},[u.pass]),
+          badge(u.role,u.role==="admin"?G.red:u.role==="promotor"?G.accent:G.blue),
+        ])),
+      ]),
+    ])
+  ]);
+}
+
+// ── SHELL ──────────────────────────────────────────────────────────────────
+function renderShell(){
+  const u=STATE.user;
+  const isAdmin=u.role==="admin";
+  const isProm=u.role==="promotor";
+  const RC={admin:G.red,promotor:G.accent,cliente:G.blue};
+
+  const navItems=isAdmin
+    ?[["dashboard","📊 Dashboard"],["nueva","🚀 Nueva"],["encuesta","📋 Encuesta"],["inventario","📦 Inventario"],["usuarios","👥 Usuarios"]]
+    :isProm
+    ?[["dashboard","📊 Dashboard"],["nueva","🚀 Nueva activación"],["encuesta","📋 Encuesta"]]
+    :[["cliente","📆 Mis activaciones"]];
+
+  const header=div({background:G.surface,borderBottom:`1px solid ${G.border}`,padding:"0 20px",position:"sticky",top:0,zIndex:100},[
+    div({maxWidth:"860px",margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:"58px"},[
+      div({fontFamily:"'Bebas Neue'",fontSize:"20px",letterSpacing:"3px",color:G.accent},["⚡ ACTIVACIONES PRO"]),
+      div({display:"flex",alignItems:"center",gap:"10px"},[
+        el("span",{fontSize:"13px",color:G.muted},[u.name]),
+        badge(u.role,RC[u.role]),
+        mkBtn("Salir",()=>{STATE.user=null;STATE.view="login";render();},"transparent",G.muted,{border:`1px solid ${G.border}`,padding:"5px 12px",fontSize:"12px"}),
+      ]),
+    ]),
+  ]);
+
+  const nav=div({background:G.surface,borderBottom:`1px solid ${G.border}`,overflowX:"auto"},[
+    div({maxWidth:"860px",margin:"0 auto",display:"flex"},[
+      ...navItems.map(([id,label])=>{
+        const nb=el("button",{padding:"13px 18px",background:"none",border:"none",borderBottom:`3px solid ${STATE.view===id?G.accent:"transparent"}`,color:STATE.view===id?G.accent:G.muted,fontFamily:"'DM Sans'",fontWeight:600,fontSize:"13px",cursor:"pointer",whiteSpace:"nowrap"},[label]);
+        nb.addEventListener("click",()=>{STATE.view=id;render();});
+        return nb;
+      }),
+    ]),
+  ]);
+
+  const content=div({padding:"28px 20px",maxWidth:"860px",margin:"0 auto"});
+  if(STATE.view==="dashboard")content.appendChild(renderDashboard());
+  else if(STATE.view==="nueva")content.appendChild(renderNueva());
+  else if(STATE.view==="encuesta")content.appendChild(renderEncuesta());
+  else if(STATE.view==="inventario")content.appendChild(renderInventario());
+  else if(STATE.view==="usuarios"&&isAdmin)content.appendChild(renderUsuarios());
+  else if(STATE.view==="cliente")content.appendChild(renderCliente());
+
+  return div({},[header,nav,content]);
+}
+
+// ── DASHBOARD ──────────────────────────────────────────────────────────────
+function renderDashboard(){
+  const db=getDB();
+  const acts=db.activaciones;
+  const encs=db.encuestas;
+  const hoy=acts.filter(a=>a.fecha===todayStr());
+  const totalV=acts.reduce((s,a)=>s+(a.ventas?.length||0),0);
+  const totalP=acts.reduce((s,a)=>s+(a.premiosEntregados||0),0);
+  const wrap=div({});
+
+  wrap.appendChild(div({display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"12px",marginBottom:"20px"},[
+    secTitle("DASHBOARD"),
+    mkBtn("📤 Exportar CSV",()=>exportCSV(),G.green,"#fff",{fontSize:"12px",padding:"8px 16px"}),
+  ]));
+
+  const kpis=div({display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:"12px",marginBottom:"24px"});
+  [{l:"Activaciones",v:acts.length,c:G.accent,i:"🚀"},{l:"Hoy",v:hoy.length,c:G.blue,i:"📅"},{l:"Ventas",v:totalV,c:G.green,i:"💰"},{l:"Premios",v:totalP,c:G.purple,i:"🎁"},{l:"Encuestas",v:encs.length,c:G.red,i:"📋"}].forEach(k=>{
+    kpis.appendChild(card([div({fontSize:"22px"},[k.i]),div({fontFamily:"'Bebas Neue'",fontSize:"30px",color:k.c},[String(k.v)]),div({fontSize:"10px",color:G.muted,textTransform:"uppercase",letterSpacing:"1px"},[k.l])],{textAlign:"center",padding:"14px"}));
+  });
+  wrap.appendChild(kpis);
+
+  if(!acts.length){
+    wrap.appendChild(card([div({color:G.muted,textAlign:"center",padding:"30px"},["No hay activaciones aún. ¡Crea una nueva en 🚀 Nueva!"])]));
+    return wrap;
+  }
+
+  wrap.appendChild(div({fontWeight:700,marginBottom:"10px",color:G.accentLight,fontSize:"13px"},["📋 HISTORIAL DE ACTIVACIONES"]));
+  [...acts].reverse().forEach(a=>{
+    const actEncs=encs.filter(e=>e.activacionId===a.id);
+    const aC=card([
+      div({display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:"8px",marginBottom:"10px"},[
+        div({},[
+          div({fontWeight:700,fontSize:"15px"},[a.marca]),
+          div({fontSize:"12px",color:G.muted},[a.nombre+" · "+(a.lugar||"").slice(0,40)]),
+          div({fontSize:"11px",color:G.muted},[a.fecha+" · "+a.timestamp]),
+        ]),
+        div({display:"flex",gap:"6px",flexWrap:"wrap"},[badge((a.ventas?.length||0)+" ventas",G.green),badge((a.premiosEntregados||0)+" premios",G.purple)]),
+      ]),
+    ],{marginBottom:"12px"});
+    if(a.inicioInventario){
+      const usado=(+a.inicioInventario||0)-(+(a.finalInventario||0));
+      aC.appendChild(div({fontSize:"12px",background:G.surface,padding:"6px 12px",borderRadius:"6px",marginBottom:"8px"},["Inventario: inicio "+a.inicioInventario+" · final "+(a.finalInventario||"—")+" · usados "+usado]));
+    }
+    if(a.ventas?.length){
+      const vw=div({display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"8px"});
+      a.ventas.forEach(v=>{vw.appendChild(div({background:G.surface,borderRadius:"6px",padding:"4px 10px",fontSize:"11px",color:G.muted},[v.nota||"Venta sin nota"]));});
+      aC.appendChild(vw);
+    }
+    if(a.premios?.length){
+      a.premios.forEach(p=>aC.appendChild(div({background:G.purple+"12",borderRadius:"6px",padding:"4px 10px",fontSize:"11px",color:G.purple,marginBottom:"4px"},["🎁 "+p.cliente+(p.motivo?" — "+p.motivo:"")])));
+    }
+    actEncs.forEach(enc=>aC.appendChild(div({background:G.surface,borderRadius:"6px",padding:"6px 10px",fontSize:"12px",marginTop:"4px"},["⭐".repeat(enc.calificacion)+(enc.nombre?" · "+enc.nombre:"")+(enc.comentario?" — "+enc.comentario:"")])));
+    wrap.appendChild(aC);
+  });
+  return wrap;
+}
+
+// ── NUEVA ACTIVACIÓN ───────────────────────────────────────────────────────
+function renderNueva(){
+  let form={nombre:STATE.user.name,lugar:"",marca:"",inicioInventario:"",timestamp:"",id:uid()};
+  let ventas=[],premios=[],finalInv="";
+  const wrap=div({maxWidth:"640px",margin:"0 auto"});
+
+  const paso1=()=>{
+    wrap.innerHTML="";
+    wrap.appendChild(secTitle("NUEVA ACTIVACIÓN"));
+    wrap.appendChild(div({color:G.muted,fontSize:"14px",marginBottom:"20px"},["Registro de activación · "+STATE.user.name]));
+    const geoSt=div({fontSize:"11px",color:G.muted,marginTop:"4px"});
+    const nI=inp("Tu nombre completo",form.nombre,v=>form.nombre=v);
+    const lI=inp("Nombre o dirección del lugar",form.lugar,v=>form.lugar=v);
+    const mI=inp("Ej: Repsol, Shell, Castrol...",form.marca,v=>form.marca=v);
+    const invI=inp("Cantidad de premios al inicio",form.inicioInventario,v=>form.inicioInventario=v,"number");
+    const geoBtn=mkBtn("📍 GPS",()=>{
+      geoSt.textContent="Obteniendo ubicación...";
+      navigator.geolocation?.getCurrentPosition(pos=>{
+        const loc=pos.coords.latitude.toFixed(5)+", "+pos.coords.longitude.toFixed(5);
+        form.lugar=loc;lI.value=loc;geoSt.textContent="✅ Ubicación capturada";
+        toast("📍 GPS capturado","success");
+      },()=>{geoSt.textContent="❌ No se pudo obtener GPS";});
+    },"transparent",G.muted,{border:`1px solid ${G.border}`,padding:"10px 14px",fontSize:"12px",flexShrink:0});
+
+    wrap.appendChild(card([
+      fld("Nombre del promotor",nI),
+      div({marginBottom:"13px"},[lbl("Lugar / Punto de venta"),div({display:"flex",gap:"8px"},[lI,geoBtn]),geoSt]),
+      fld("Marca que se promueve",mI),
+      fld("Inventario inicial de premios",invI),
+    ],{marginBottom:"16px"}));
+
+    wrap.appendChild(mkBtn("🚀 Iniciar Activación",()=>{
+      if(!form.nombre||!form.lugar||!form.marca){toast("Completa nombre, lugar y marca","error");return;}
+      form.timestamp=nowStr();
+      toast("🚀 Activación iniciada: "+form.marca+" en "+form.lugar,"success");
+      paso2();
+    },G.accent,"#000",{width:"100%",padding:"14px",fontSize:"16px"}));
+  };
+
+  const paso2=()=>{
+    wrap.innerHTML="";
+
+    // Banner activo
+    wrap.appendChild(div({background:G.green+"15",border:`1px solid ${G.green}40`,borderRadius:"12px",padding:"12px 18px",marginBottom:"16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"8px"},[
+      div({},[
+        div({fontFamily:"'Bebas Neue'",fontSize:"18px",color:G.green,letterSpacing:"2px"},["🟢 ACTIVACIÓN EN CURSO"]),
+        div({fontSize:"12px",color:G.muted},[form.nombre+" · "+form.marca+" · "+form.timestamp]),
+      ]),
+      badge(form.lugar.slice(0,25),G.blue),
+    ]));
+
+    // Timer
+    let secs=600;
+    const timerVal=div({fontFamily:"'Bebas Neue'",fontSize:"56px",color:G.green,lineHeight:1},["10:00"]);
+    const timerBar=div({position:"absolute",bottom:0,left:0,height:"3px",background:G.green,width:"0%",transition:"width 1s linear"});
+    wrap.appendChild(card([
+      div({fontFamily:"'Bebas Neue'",fontSize:"11px",letterSpacing:"3px",color:G.muted,marginBottom:"6px"},["PRÓXIMA PROMOCIÓN EN"]),
+      timerVal,
+      div({fontSize:"12px",color:G.muted,marginTop:"4px"},["Recordatorio cada 10 minutos"]),
+      timerBar,
+    ],{textAlign:"center",position:"relative",overflow:"hidden",marginBottom:"16px"}));
+    const timerIv=setInterval(()=>{
+      secs--;
+      if(secs<=0){secs=600;toast("🔊 ¡HORA DE HACER PROMOCIÓN EN AUDIO!","warning");}
+      const m=Math.floor(secs/60),s=secs%60;
+      timerVal.textContent=String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+      const col=secs<60?G.red:secs<180?G.accent:G.green;
+      timerVal.style.color=col;timerBar.style.background=col;
+      timerBar.style.width=((600-secs)/600*100)+"%";
+    },1000);
+
+    // Ventas
+    const vLista=div({marginTop:"8px"});
+    const cV=div({fontSize:"12px",color:G.green,fontWeight:700,marginTop:"8px"},["Total: 0 ventas"]);
+    const vNI=inp("Descripción de la venta","",()=>{});
+    wrap.appendChild(card([
+      div({fontFamily:"'Bebas Neue'",fontSize:"20px",letterSpacing:"2px",color:G.accentLight,marginBottom:"12px"},["💰 REGISTRO DE VENTAS"]),
+      fld("Nota de la venta",vNI,"8px"),
+      mkBtn("➕ Agregar venta",()=>{
+        const nota=vNI.value;
+        ventas.push({nota,id:uid(),hora:nowStr()});
+        vNI.value="";
+        vLista.appendChild(div({background:G.surface,borderRadius:"8px",padding:"7px 12px",marginTop:"6px",fontSize:"13px"},["#"+ventas.length+": "+(nota||"Sin nota")+" · "+nowStr()]));
+        cV.textContent="Total: "+ventas.length+" ventas";
+        toast("💰 Venta #"+ventas.length+" registrada","success");
+      },G.green,"#fff",{padding:"9px 18px",fontSize:"13px"}),
+      vLista,cV,
+    ],{marginBottom:"14px"}));
+
+    // Premios
+    const pLista=div({marginTop:"8px"});
+    const cP=div({fontSize:"12px",color:G.purple,fontWeight:700,marginTop:"8px"},["Premios entregados: 0"]);
+    const pCI=inp("Nombre del cliente que ganó","",()=>{});
+    const pMI=inp("Motivo / Actividad ganada","",()=>{});
+    wrap.appendChild(card([
+      div({fontFamily:"'Bebas Neue'",fontSize:"20px",letterSpacing:"2px",color:G.purple,marginBottom:"12px"},["🎁 PREMIOS ENTREGADOS"]),
+      fld("Nombre del cliente",pCI,"8px"),
+      fld("Motivo / Actividad",pMI,"8px"),
+      mkBtn("🎁 Registrar premio",()=>{
+        const cli=pCI.value;
+        if(!cli){toast("Agrega el nombre del cliente","error");return;}
+        premios.push({cliente:cli,motivo:pMI.value,id:uid(),hora:nowStr()});
+        pCI.value="";pMI.value="";
+        pLista.appendChild(div({background:G.surface,borderRadius:"8px",padding:"7px 12px",marginTop:"6px",fontSize:"13px"},["🎁 "+cli+(pMI.value?" — "+pMI.value:"")]));
+        cP.textContent="Premios entregados: "+premios.length;
+        toast("🎁 Premio a: "+cli,"success");
+      },G.purple,"#fff",{width:"100%",padding:"10px",fontSize:"13px",marginTop:"6px"}),
+      pLista,cP,
+    ],{marginBottom:"14px"}));
+
+    // Cierre
+    const fI=inp("Premios restantes al cierre","",v=>finalInv=v,"number");
+    const cuadreInfo=div({fontSize:"12px",background:G.surface,padding:"8px 12px",borderRadius:"6px",marginTop:"8px",display:"none"});
+    fI.addEventListener("input",e=>{
+      if(form.inicioInventario&&e.target.value){
+        const usado=(+form.inicioInventario||0)-(+e.target.value||0);
+        const diff=usado-premios.length;
+        cuadreInfo.textContent="Inicio: "+form.inicioInventario+" · Final: "+e.target.value+" · Usados: "+usado+" · Registrados: "+premios.length+(diff!==0?" ⚠️ Diferencia: "+diff:"  ✅ Cuadre OK");
+        cuadreInfo.style.display="block";
+        cuadreInfo.style.color=diff!==0?G.red:G.green;
+      }
+    });
+    wrap.appendChild(card([
+      div({fontFamily:"'Bebas Neue'",fontSize:"20px",letterSpacing:"2px",color:G.red,marginBottom:"12px"},["🔒 CIERRE DE ACTIVACIÓN"]),
+      fld("Inventario final de premios",fI,"4px"),
+      cuadreInfo,
+    ],{marginBottom:"14px"}));
+
+    wrap.appendChild(mkBtn("💾 Guardar y cerrar activación",()=>{
+      clearInterval(timerIv);
+      const db=getDB();
+      db.activaciones.push({...form,ventas,premios,finalInventario:finalInv,premiosEntregados:premios.length,fecha:todayStr()});
+      saveDB(db);
+      toast("✅ Activación guardada · "+ventas.length+" ventas · "+premios.length+" premios","success");
+      STATE.view="dashboard";render();
+    },G.accent,"#000",{width:"100%",padding:"14px",fontSize:"15px"}));
+  };
+
+  paso1();return wrap;
+}
+
+// ── ENCUESTA ───────────────────────────────────────────────────────────────
+function renderEncuesta(){
+  const wrap=div({maxWidth:"520px",margin:"0 auto"});
+  let form={activacionId:"",calificacion:0,comentario:"",nombre:""};
+  const db=getDB();
+  const acts=db.activaciones;
+
+  wrap.appendChild(secTitle("ENCUESTA DEL CLIENTE"));
+  wrap.appendChild(div({color:G.muted,fontSize:"14px",marginBottom:"20px"},["¿Cómo viste nuestra activación hoy?"]));
+
+  const errEl=div({color:G.red,fontSize:"12px",display:"none",marginBottom:"10px"});
+  const nI=inp("Tu nombre (opcional)","",v=>form.nombre=v);
+  const aSel=selEl([["","-- Selecciona la activación --"],...acts.map(a=>[a.id,a.fecha+" · "+a.marca+" · "+a.nombre])],form.activacionId,v=>form.activacionId=v);
+
+  const stars=[];
+  const starsRow=div({display:"flex",gap:"10px",marginTop:"6px"});
+  for(let n=1;n<=5;n++){
+    const s=el("button",{width:"46px",height:"46px",borderRadius:"10px",fontSize:"20px",border:`2px solid ${G.border}`,background:G.surface,cursor:"pointer"},["⭐"]);
+    s.addEventListener("click",()=>{form.calificacion=n;stars.forEach((st,i)=>{st.style.borderColor=i<n?G.accent:G.border;st.style.background=i<n?G.accent+"22":G.surface;});});
+    stars.push(s);starsRow.appendChild(s);
+  }
+  const comI=el("textarea",{},{},{"placeholder":"¿Qué te pareció la activación? ¿Alguna sugerencia?"});
+  comI.addEventListener("input",e=>form.comentario=e.target.value);
+
+  wrap.appendChild(card([
+    errEl,
+    fld("Tu nombre",nI),
+    fld("Activación",aSel),
+    div({marginBottom:"14px"},[lbl("Calificación general"),starsRow]),
+    fld("Comentario",comI,"10px"),
+    mkBtn("Enviar encuesta ✉️",()=>{
+      if(!form.calificacion||!form.activacionId){errEl.textContent="Selecciona una activación y da una calificación";errEl.style.display="block";return;}
+      const db=getDB();
+      db.encuestas.push({...form,id:uid(),timestamp:nowStr()});
+      saveDB(db);
+      toast("📋 Encuesta enviada · "+"⭐".repeat(form.calificacion),"success");
+      wrap.innerHTML="";
+      wrap.appendChild(div({textAlign:"center",padding:"60px 20px"},[
+        div({fontSize:"56px",marginBottom:"16px"},["🎉"]),
+        div({fontFamily:"'Bebas Neue'",fontSize:"30px",color:G.green,letterSpacing:"2px"},["¡GRACIAS POR TU OPINIÓN!"]),
+        div({color:G.muted,fontSize:"14px",marginTop:"8px"},["Tu comentario ha sido registrado"]),
+        div({marginTop:"24px"},[mkBtn("Nueva encuesta",()=>{STATE.view="encuesta";render();},G.accent,"#000",{padding:"10px 24px"})]),
+      ]));
+    },G.accent,"#000",{width:"100%",padding:"13px",fontSize:"15px",marginTop:"6px"}),
+  ]));
+  return wrap;
+}
+
+// ── INVENTARIO ─────────────────────────────────────────────────────────────
+function renderInventario(){
+  const db=getDB();
+  const acts=db.activaciones;
+  const encs=db.encuestas;
+  const wrap=div({});
+  wrap.appendChild(div({display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"12px",marginBottom:"20px"},[
+    secTitle("INVENTARIO DE PREMIOS"),
+    mkBtn("📤 Exportar CSV",()=>exportCSV(),G.green,"#fff",{fontSize:"12px",padding:"8px 16px"}),
+  ]));
+  const rows=acts.map(a=>({fecha:a.fecha,promotor:a.nombre,marca:a.marca,inicio:+a.inicioInventario||0,fin:+(a.finalInventario||0),usados:(+a.inicioInventario||0)-(+(a.finalInventario||0)),reg:a.premiosEntregados||0,diff:((+a.inicioInventario||0)-(+(a.finalInventario||0)))-(a.premiosEntregados||0)}));
+  const tot=k=>rows.reduce((s,r)=>s+r[k],0);
+  const kpis=div({display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:"12px",marginBottom:"20px"});
+  [{l:"Total inicio",v:tot("inicio"),c:G.blue},{l:"Total usados",v:tot("usados"),c:G.accent},{l:"Registrados",v:tot("reg"),c:G.green},{l:"Diferencia",v:tot("usados")-tot("reg"),c:tot("usados")-tot("reg")===0?G.green:G.red}].forEach(k=>{
+    kpis.appendChild(card([div({fontFamily:"'Bebas Neue'",fontSize:"28px",color:k.c},[String(k.v)]),div({fontSize:"10px",color:G.muted,textTransform:"uppercase"},[k.l])],{textAlign:"center",padding:"14px"}));
+  });
+  wrap.appendChild(kpis);
+  if(!rows.length){wrap.appendChild(card([div({color:G.muted,textAlign:"center",padding:"24px"},["Sin datos de inventario aún."])]));return wrap;}
+  const tw=div({overflowX:"auto"});
+  const table=el("table",{width:"100%",borderCollapse:"collapse",fontSize:"13px"});
+  const thead=el("tr",{background:G.surface});
+  ["Fecha","Promotor","Marca","Inicio","Final","Usados","Registr.","Dif."].forEach(h=>thead.appendChild(el("th",{padding:"10px 12px",textAlign:"left",color:G.muted,fontWeight:700,fontSize:"11px",textTransform:"uppercase",whiteSpace:"nowrap"},[h])));
+  table.appendChild(el("thead",{},[thead]));
+  const tbody=el("tbody",{});
+  rows.forEach(r=>{
+    const tr=el("tr",{borderBottom:`1px solid ${G.border}`});
+    [r.fecha,r.promotor,r.marca,r.inicio,r.fin,r.usados,r.reg,r.diff===0?"✓":r.diff>0?"+"+r.diff:r.diff].forEach((v,i)=>{
+      tr.appendChild(el("td",{padding:"10px 12px",color:i===5?G.accent:i===6?G.green:i===7?(r.diff===0?G.green:G.red):G.text},[String(v)]));
+    });tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);tw.appendChild(table);wrap.appendChild(tw);
+  return wrap;
+}
+
+// ── USUARIOS ───────────────────────────────────────────────────────────────
+function renderUsuarios(){
+  const RC={admin:G.red,promotor:G.accent,cliente:G.blue};
+  const RL={admin:"Administrador",promotor:"Promotor",cliente:"Cliente"};
+  const wrap=div({});
+  const buildList=()=>{
+    wrap.innerHTML="";
+    const all=getUsers();
+    wrap.appendChild(div({display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"12px",marginBottom:"20px"},[
+      div({},[secTitle("GESTIÓN DE USUARIOS"),div({color:G.muted,fontSize:"13px"},[all.length+" usuarios registrados"])]),
+      mkBtn("➕ Nuevo usuario",()=>showModal("nuevo"),G.accent,"#000",{padding:"10px 20px",fontSize:"13px"}),
+    ]));
+    const kpis=div({display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"12px",marginBottom:"18px"});
+    ["admin","promotor","cliente"].forEach(r=>{
+      const c=all.filter(u=>u.role===r).length;
+      kpis.appendChild(card([div({fontFamily:"'Bebas Neue'",fontSize:"28px",color:RC[r]},[String(c)]),div({fontSize:"10px",color:G.muted,textTransform:"uppercase"},[r+"s"])],{textAlign:"center",padding:"14px"}));
+    });
+    wrap.appendChild(kpis);
+    all.forEach(u=>{
+      const isMe=u.id===STATE.user.id;
+      const inactive=u.activo===false;
+      const isBase=USERS_BASE.find(b=>b.id===u.id);
+      wrap.appendChild(card([
+        div({display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"},[
+          div({display:"flex",alignItems:"center",gap:"12px"},[
+            div({width:"44px",height:"44px",borderRadius:"10px",background:RC[u.role]+"22",border:`2px solid ${RC[u.role]}44`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Bebas Neue'",fontSize:"20px",color:RC[u.role],flexShrink:0},[u.name.charAt(0).toUpperCase()]),
+            div({},[
+              div({fontWeight:700,fontSize:"14px",display:"flex",alignItems:"center",gap:"8px"},[
+                u.name,
+                isMe?badge("Tú",G.green):"",
+                inactive?badge("Inactivo",G.muted):"",
+              ]),
+              div({fontSize:"12px",color:G.muted},["@"+u.user+" · "+u.pass]),
+              div({marginTop:"4px"},[badge(RL[u.role],RC[u.role])]),
+            ]),
+          ]),
+          div({display:"flex",gap:"6px",flexWrap:"wrap"},[
+            mkBtn("✏️ Editar",()=>showModal(u),"transparent",G.muted,{border:`1px solid ${G.border}`,padding:"5px 12px",fontSize:"12px"}),
+            !isMe?mkBtn(inactive?"✅ Activar":"⏸ Desact.",()=>{
+              const all2=getUsers();
+              const idx=all2.findIndex(x=>x.id===u.id);
+              if(idx>=0){all2[idx].activo=!all2[idx].activo;saveExtraUsers(all2);}
+              if(isBase){toast("Los usuarios base no se pueden desactivar aquí","warning");return;}
+              toast(u.name+" "+(inactive?"activado":"desactivado"),"info");buildList();
+            },inactive?G.green:"transparent",inactive?"#fff":G.muted,{border:`1px solid ${G.border}`,padding:"5px 12px",fontSize:"12px"}):"",
+            (!isMe&&!isBase)?mkBtn("🗑",()=>{
+              if(confirm("¿Eliminar a "+u.name+"?")){
+                const all2=getUsers().filter(x=>x.id!==u.id);
+                saveExtraUsers(all2);toast("Usuario eliminado","success");buildList();
+              }
+            },G.red,"#fff",{padding:"5px 10px",fontSize:"12px"}):"",
+          ]),
+        ]),
+      ],{marginBottom:"10px",opacity:inactive?.55:1}));
+    });
+  };
+
+  const showModal=(mode)=>{
+    document.getElementById("umodal")?.remove();
+    const isNew=mode==="nuevo";
+    let f=isNew?{name:"",user:"",pass:"",role:"promotor"}:{...mode};
+    const nI=inp("Nombre completo",f.name,v=>f.name=v);
+    const uI=inp("Usuario para login",f.user,v=>f.user=v);
+    const pI=inp("Contraseña",f.pass,v=>f.pass=v);
+    const rS=selEl([["admin","Administrador — acceso total"],["promotor","Promotor — ingresa activaciones"],["cliente","Cliente — solo consulta"]],f.role,v=>f.role=v);
+    const errM=div({color:G.red,fontSize:"12px",display:"none",marginBottom:"10px"});
+    const guardar=()=>{
+      if(!f.name.trim()||!f.user.trim()||!f.pass.trim()){errM.textContent="Todos los campos son obligatorios";errM.style.display="block";return;}
+      const all=getUsers();
+      if(isNew){
+        if(all.find(u=>u.user===f.user.trim())){errM.textContent="Ese usuario ya existe";errM.style.display="block";return;}
+        const nuevo={...f,id:uid(),user:f.user.trim(),activo:true};
+        saveExtraUsers([...all,nuevo]);
+        toast("✅ Usuario "+f.name+" creado","success");
+      }else{
+        const all2=all.map(u=>u.id===mode.id?{...u,...f,user:f.user.trim()}:u);
+        saveExtraUsers(all2);
+        toast("✅ "+f.name+" actualizado","success");
+      }
+      document.getElementById("umodal")?.remove();buildList();
+    };
+    const overlay=div({position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"},[
+      card([
+        div({fontFamily:"'Bebas Neue'",fontSize:"22px",letterSpacing:"2px",color:G.accent,marginBottom:"18px"},[isNew?"➕ NUEVO USUARIO":"✏️ EDITAR: "+mode.name?.toUpperCase()]),
+        errM,fld("Nombre completo",nI),fld("Usuario",uI),fld("Contraseña",pI),
+        div({marginBottom:"16px"},[lbl("Rol"),rS]),
+        div({display:"flex",gap:"10px"},[
+          mkBtn(isNew?"Crear usuario":"Guardar cambios",guardar,G.accent,"#000",{flex:1,padding:"11px"}),
+          mkBtn("Cancelar",()=>overlay.remove(),"transparent",G.muted,{flex:1,padding:"11px",border:`1px solid ${G.border}`}),
+        ]),
+      ],{maxWidth:"420px",width:"100%"}),
+    ]);
+    overlay.id="umodal";
+    overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.remove();});
+    document.body.appendChild(overlay);
+  };
+
+  buildList();return wrap;
+}
+
+// ── CLIENTE ────────────────────────────────────────────────────────────────
+function renderCliente(){
+  const db=getDB();
+  const acts=db.activaciones;
+  const encs=db.encuestas;
+  const wrap=div({});
+  wrap.appendChild(div({display:"flex",alignItems:"center",gap:"12px",marginBottom:"18px"},[secTitle("PORTAL DEL CLIENTE"),badge("Solo lectura",G.blue)]));
+  const totalV=acts.reduce((s,a)=>s+(a.ventas?.length||0),0);
+  const totalP=acts.reduce((s,a)=>s+(a.premiosEntregados||0),0);
+  const kpis=div({display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:"12px",marginBottom:"20px"});
+  [{l:"Activaciones",v:acts.length,c:G.accent,i:"🚀"},{l:"Ventas",v:totalV,c:G.green,i:"💰"},{l:"Premios",v:totalP,c:G.purple,i:"🎁"}].forEach(k=>{
+    kpis.appendChild(card([div({fontSize:"22px"},[k.i]),div({fontFamily:"'Bebas Neue'",fontSize:"28px",color:k.c},[String(k.v)]),div({fontSize:"10px",color:G.muted,textTransform:"uppercase"},[k.l])],{textAlign:"center",padding:"14px"}));
+  });
+  wrap.appendChild(kpis);
+  if(!acts.length){wrap.appendChild(card([div({color:G.muted,textAlign:"center",padding:"30px"},["Aún no hay activaciones registradas."])]));return wrap;}
+  wrap.appendChild(div({fontWeight:700,marginBottom:"10px",color:G.accentLight,fontSize:"13px"},["📋 ÚLTIMAS ACTIVACIONES"]));
+  [...acts].reverse().slice(0,15).forEach(a=>{
+    const aC=card([
+      div({display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:"8px"},[
+        div({},[div({fontWeight:700,fontSize:"15px"},[a.marca]),div({fontSize:"12px",color:G.muted},[(a.lugar||"").slice(0,40)+" · "+a.fecha])]),
+        div({display:"flex",gap:"6px"},[badge((a.ventas?.length||0)+" ventas",G.green),badge((a.premiosEntregados||0)+" premios",G.purple)]),
+      ]),
+    ],{marginBottom:"10px"});
+    encs.filter(e=>e.activacionId===a.id).forEach(enc=>aC.appendChild(div({background:G.surface,borderRadius:"6px",padding:"5px 10px",fontSize:"12px",marginTop:"6px"},["⭐".repeat(enc.calificacion)+(enc.comentario?" — "+enc.comentario:"")])));
+    wrap.appendChild(aC);
+  });
+  return wrap;
+}
+
+// ── CSV ────────────────────────────────────────────────────────────────────
+function exportCSV(){
+  const db=getDB();const acts=db.activaciones;const encs=db.encuestas;
+  const h=["Fecha","Promotor","Marca","Lugar","Hora Inicio","Ventas","Premios","Inv.Inicio","Inv.Final","Diferencia"];
+  const rows=acts.map(a=>{
+    const usado=(+a.inicioInventario||0)-(+(a.finalInventario||0));
+    return[a.fecha,a.nombre,a.marca,a.lugar,a.timestamp,a.ventas?.length||0,a.premiosEntregados||0,a.inicioInventario||0,a.finalInventario||0,usado-(a.premiosEntregados||0)];
+  });
+  const csv=[h,...rows].map(r=>r.map(c=>`"${c}"`).join(",")).join("\n");
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=url;a.download="activaciones_"+todayStr().replace(/\//g,"-")+".csv";a.click();URL.revokeObjectURL(url);
+  toast("📤 CSV exportado correctamente","success");
+}
+
+render();
+</script>
+</body>
+</html>
